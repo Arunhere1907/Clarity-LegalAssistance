@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, ArrowUpRight, PlayCircle, Mail, GitCompare, FileDown, Loader2 } from 'lucide-react';
 import { Clause, RiskTag, DocumentAnalysis } from '../types';
 import { downloadDocumentRiskReportPDF } from '../utils/pdfGenerator';
@@ -12,7 +12,7 @@ interface RiskTagsPanelProps {
   onSuggestFairerLanguage?: (clause: Clause) => void;
 }
 
-export const RiskTagsPanel: React.FC<RiskTagsPanelProps> = ({
+export const RiskTagsPanel: React.FC<RiskTagsPanelProps> = React.memo(({
   clauses,
   documentAnalysis,
   onSelectClause,
@@ -23,12 +23,12 @@ export const RiskTagsPanel: React.FC<RiskTagsPanelProps> = ({
   const [activeFilter, setActiveFilter] = useState<'all' | RiskTag>('all');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (!documentAnalysis) return;
     setIsGeneratingPdf(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
-        downloadDocumentRiskReportPDF(documentAnalysis);
+        await downloadDocumentRiskReportPDF(documentAnalysis);
       } catch (err) {
         console.error('Failed to generate PDF:', err);
       } finally {
@@ -37,17 +37,22 @@ export const RiskTagsPanel: React.FC<RiskTagsPanelProps> = ({
     }, 40);
   };
 
-  const counts = {
+  // Memoize counts calculation to avoid recomputing on every render
+  const counts = useMemo(() => ({
     all: clauses.length,
     'high-attention': clauses.filter((c) => c.tag === 'high-attention').length,
     unusual: clauses.filter((c) => c.tag === 'unusual').length,
     standard: clauses.filter((c) => c.tag === 'standard').length,
     'missing-but-expected': clauses.filter((c) => c.tag === 'missing-but-expected').length,
-  };
+  }), [clauses]);
 
-  const filteredClauses = activeFilter === 'all'
-    ? clauses
-    : clauses.filter((c) => c.tag === activeFilter);
+  // Memoize filtered clauses to avoid recomputing on every render
+  const filteredClauses = useMemo(() => 
+    activeFilter === 'all'
+      ? clauses
+      : clauses.filter((c) => c.tag === activeFilter),
+    [clauses, activeFilter]
+  );
 
   const getTagBadge = (tag: RiskTag) => {
     switch (tag) {
@@ -266,4 +271,4 @@ export const RiskTagsPanel: React.FC<RiskTagsPanelProps> = ({
       </div>
     </div>
   );
-};
+});

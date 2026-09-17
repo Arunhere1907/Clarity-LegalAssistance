@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # Enable version updates for npm
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "clarity-legal-team"
+    assignees:
+      - "clarity-legal-team"
+    labels:
+      - "dependencies"
+      - "security"
+    # Group all patch and minor updates together
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      development-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    # Ignore specific packages if needed
+    ignore:
+      # Example: ignore react major version updates
+      # - dependency-name: "react"
+      #   update-types: ["version-update:semver-major"]

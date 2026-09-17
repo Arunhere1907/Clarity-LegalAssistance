@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, PlayCircle, Clock, Shield, Gavel } from 'lucide-react';
 import { Clause, SimulationResult } from '../types';
 import { validateSimulationResult } from '../utils/validateAiResponse';
+import { clauseCache } from '../utils/clauseCache';
 
 interface SimulatorModalProps {
   clause: Clause | null;
@@ -96,6 +97,14 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
 
   const handleSimulate = async (customScenario?: string) => {
     const scenario = customScenario || scenarioInput || 'What happens if this clause is actually invoked or breached?';
+    
+    // Check cache first
+    const cachedResult = clauseCache.get<SimulationResult>(clause.id, 'simulate', scenario);
+    if (cachedResult) {
+      setResult(cachedResult);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -112,9 +121,15 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
       if (!res.ok) throw new Error('Simulation API request failed.');
 
       const data: unknown = await res.json();
-      setResult(validateSimulationResult(data));
+      const validatedResult = validateSimulationResult(data);
+      
+      // Cache the result
+      clauseCache.set(clause.id, 'simulate', validatedResult, scenario);
+      setResult(validatedResult);
     } catch {
-      setResult(generateDefaultResult(clause));
+      const fallbackResult = generateDefaultResult(clause);
+      setResult(fallbackResult);
+      // Don't cache fallback results
     } finally {
       setIsLoading(false);
     }

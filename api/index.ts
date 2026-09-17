@@ -1,6 +1,8 @@
 import express, { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
+import { z } from "zod";
+import helmet from "helmet";
 
 dotenv.config();
 
@@ -15,6 +17,76 @@ const MAX_STRATEGY_LENGTH = 2_000;
 const ALLOWED_DOC_TYPES = new Set([
   "lease", "employment", "nda", "loan", "tos", "vendor", "custom",
 ]);
+
+// ---------------------------------------------------------------------------
+// Zod validation schemas for request bodies
+// ---------------------------------------------------------------------------
+const AnalyzeRequestSchema = z.object({
+  text: z.string().min(1).max(MAX_DOCUMENT_LENGTH),
+  userTypeOverride: z.enum(["lease", "employment", "nda", "loan", "tos", "vendor", "custom"]).optional(),
+});
+
+const QARequestSchema = z.object({
+  question: z.string().min(1).max(MAX_QUESTION_LENGTH),
+  docTitle: z.string().max(MAX_NAME_LENGTH).optional(),
+  clauses: z.array(z.object({
+    id: z.string(),
+    number: z.string(),
+    title: z.string(),
+    originalText: z.string(),
+  })).min(1).max(200),
+});
+
+const SimulateRequestSchema = z.object({
+  clauseTitle: z.string().max(MAX_NAME_LENGTH),
+  originalText: z.string().max(MAX_DOCUMENT_LENGTH),
+  scenario: z.string().max(MAX_SCENARIO_LENGTH).optional(),
+});
+
+const CompareRequestSchema = z.object({
+  docAText: z.string().min(1).max(MAX_DOCUMENT_LENGTH),
+  docBText: z.string().min(1).max(MAX_DOCUMENT_LENGTH),
+  docAName: z.string().max(MAX_NAME_LENGTH).optional(),
+  docBName: z.string().max(MAX_NAME_LENGTH).optional(),
+});
+
+const DraftMessageRequestSchema = z.object({
+  clauseTitle: z.string().max(MAX_NAME_LENGTH),
+  originalText: z.string().max(MAX_DOCUMENT_LENGTH),
+  tag: z.string().optional(),
+  tagReason: z.string().max(MAX_STRATEGY_LENGTH).optional(),
+  suggestedStrategy: z.string().max(MAX_STRATEGY_LENGTH).optional(),
+  docTitle: z.string().max(MAX_NAME_LENGTH).optional(),
+  docType: z.string().max(50).optional(),
+});
+
+const SuggestFairerLanguageRequestSchema = z.object({
+  clauseTitle: z.string().max(MAX_NAME_LENGTH),
+  originalText: z.string().max(MAX_DOCUMENT_LENGTH),
+  tag: z.string().optional(),
+  tagReason: z.string().max(MAX_STRATEGY_LENGTH).optional(),
+  suggestedReplacementText: z.string().max(MAX_DOCUMENT_LENGTH).optional(),
+  docType: z.string().max(50).optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Middleware to validate request body with Zod schema
+// ---------------------------------------------------------------------------
+function validateRequest<T extends z.ZodTypeAny>(schema: T) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      schema.parse(req.body);
+      next();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const err = new Error(`Invalid request: ${error.issues.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`).join(', ')}`) as Error & { statusCode?: number };
+        err.statusCode = 400;
+        return sendError(res, err);
+      }
+      next(error);
+    }
+  };
+}
 
 // ---------------------------------------------------------------------------
 // AI client (lazy-init, server-side only — NEVER expose to the browser)
@@ -96,7 +168,42 @@ async function callGemini(
 // Express app
 // ---------------------------------------------------------------------------
 const app = express();
-app.use(express.json({ limit: "1mb" })); // tighter than the original 10 mb
+
+// Configure helmet with explicit CSP and security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"], // unsafe-inline needed for Vite in dev
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "https://generativelanguage.googleapis.com"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+  frameguard: {
+    action: 'deny',
+  },
+  xssFilter: true,
+  noSniff: true,
+  referrerPolicy: {
+    policy: 'strict-origin-when-cross-origin',
+  },
+}));
+
+// Configure request size limits to prevent oversized-payload abuse
+app.use(express.json({ 
+  limit: '500kb', // Reduced from 1mb for tighter security
+  strict: true,   // Only parse objects and arrays
+}));
 
 // ---------------------------------------------------------------------------
 // CORS
@@ -145,9 +252,9 @@ function requireString(
   return value.trim().slice(0, maxLength);
 }
 
-/** Generic safe error responder — never leaks stack traces or internal details. */
+/** Generic safe error responder — never leaks stack traces or internal details in production. */
 function sendError(res: Response, err: unknown): void {
-  const typedErr = err as { statusCode?: number; message?: string };
+  const typedErr = err as { statusCode?: number; message?: string; stack?: string };
   const status =
     typeof typedErr.statusCode === "number" &&
     typedErr.statusCode >= 400 &&
@@ -155,16 +262,33 @@ function sendError(res: Response, err: unknown): void {
       ? typedErr.statusCode
       : 500;
 
-  const clientMessage =
-    status === 400
-      ? (typedErr.message ?? "Bad request.")
-      : status === 503
-      ? "The AI service is not configured. Please check server environment variables."
-      : "An error occurred. Please try again.";
+  // Determine client-facing message based on status code
+  let clientMessage: string;
+  if (status === 400) {
+    clientMessage = typedErr.message ?? "Bad request.";
+  } else if (status === 503) {
+    clientMessage = "The AI service is not configured. Please check server environment variables.";
+  } else {
+    // Never leak internal error details in production
+    clientMessage = process.env.NODE_ENV === "production"
+      ? "An error occurred. Please try again."
+      : typedErr.message ?? "An error occurred. Please try again.";
+  }
 
-  // Server-side: log the real error (without exposing to client)
+  // Server-side: log the real error with stack trace (without exposing to client)
   if (status === 500) {
-    console.error("[Clarity API] Internal error:", err);
+    console.error("[Clarity API] Internal error:", {
+      message: typedErr.message,
+      stack: process.env.NODE_ENV === "production" ? undefined : typedErr.stack,
+      timestamp: new Date().toISOString(),
+    });
+  } else if (status >= 400 && status < 500) {
+    // Log client errors at lower severity
+    console.warn("[Clarity API] Client error:", {
+      status,
+      message: typedErr.message,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   res.status(status).json({ error: clientMessage });
@@ -206,7 +330,7 @@ router.get("/health", (_req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // 1. Ingest & Analyse Document
 // ---------------------------------------------------------------------------
-router.post("/analyze", async (req: Request, res: Response) => {
+router.post("/analyze", validateRequest(AnalyzeRequestSchema), async (req: Request, res: Response) => {
   try {
     const text = requireString(req.body.text, "Document text", MAX_DOCUMENT_LENGTH);
 
@@ -399,7 +523,7 @@ router.post("/analyze", async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // 2. Grounded Q&A
 // ---------------------------------------------------------------------------
-router.post("/qa", async (req: Request, res: Response) => {
+router.post("/qa", validateRequest(QARequestSchema), async (req: Request, res: Response) => {
   try {
     const question = requireString(req.body.question, "Question", MAX_QUESTION_LENGTH);
     const docTitle = truncate(String(req.body.docTitle ?? "Document"), MAX_NAME_LENGTH);
@@ -493,7 +617,7 @@ router.post("/qa", async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // 3. "What Happens If" Simulator
 // ---------------------------------------------------------------------------
-router.post("/simulate", async (req: Request, res: Response) => {
+router.post("/simulate", validateRequest(SimulateRequestSchema), async (req: Request, res: Response) => {
   try {
     const originalText = requireString(
       req.body.originalText,
@@ -563,7 +687,7 @@ router.post("/simulate", async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // 4. Document Comparator
 // ---------------------------------------------------------------------------
-router.post("/compare", async (req: Request, res: Response) => {
+router.post("/compare", validateRequest(CompareRequestSchema), async (req: Request, res: Response) => {
   try {
     const docAText = requireString(req.body.docAText, "Document A text", MAX_DOCUMENT_LENGTH);
     const docBText = requireString(req.body.docBText, "Document B text", MAX_DOCUMENT_LENGTH);
@@ -627,7 +751,7 @@ router.post("/compare", async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // 5. Draft Counterparty Negotiation Email
 // ---------------------------------------------------------------------------
-router.post("/draft-message", async (req: Request, res: Response) => {
+router.post("/draft-message", validateRequest(DraftMessageRequestSchema), async (req: Request, res: Response) => {
   try {
     const clauseTitle = requireString(req.body.clauseTitle, "clauseTitle", MAX_NAME_LENGTH);
     const originalText = requireString(req.body.originalText, "originalText", MAX_DOCUMENT_LENGTH);
@@ -708,7 +832,7 @@ router.post("/draft-message", async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // 6. Suggest Fairer Language
 // ---------------------------------------------------------------------------
-router.post("/suggest-fairer-language", async (req: Request, res: Response) => {
+router.post("/suggest-fairer-language", validateRequest(SuggestFairerLanguageRequestSchema), async (req: Request, res: Response) => {
   try {
     const clauseTitle = requireString(req.body.clauseTitle, "clauseTitle", MAX_NAME_LENGTH);
     const originalText = requireString(req.body.originalText, "originalText", MAX_DOCUMENT_LENGTH);

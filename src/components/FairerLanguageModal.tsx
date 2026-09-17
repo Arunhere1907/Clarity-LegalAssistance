@@ -3,6 +3,7 @@ import { X, GitCompare, Copy, Check, RefreshCw, Sparkles, Split, FileText, Alert
 import { Clause, FairerLanguageResult } from '../types';
 import { computeWordDiff, DiffToken } from '../utils/diffHelper';
 import { validateFairerLanguageResult } from '../utils/validateAiResponse';
+import { clauseCache } from '../utils/clauseCache';
 
 interface FairerLanguageModalProps {
   clause: Clause | null;
@@ -40,6 +41,13 @@ export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
   };
 
   const fetchFairerLanguage = async (c: Clause) => {
+    // Check cache first
+    const cachedResult = clauseCache.get<FairerLanguageResult>(c.id, 'fairer');
+    if (cachedResult) {
+      setResult(cachedResult);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const res = await fetch('/api/suggest-fairer-language', {
@@ -57,9 +65,15 @@ export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
 
       if (!res.ok) throw new Error('API error');
       const data: unknown = await res.json();
-      setResult(validateFairerLanguageResult(data, c.originalText));
+      const validatedResult = validateFairerLanguageResult(data, c.originalText);
+      
+      // Cache the result
+      clauseCache.set(c.id, 'fairer', validatedResult);
+      setResult(validatedResult);
     } catch {
-      setResult(generateBaseReplacement(c));
+      const fallbackResult = generateBaseReplacement(c);
+      setResult(fallbackResult);
+      // Don't cache fallback results
     } finally {
       setIsLoading(false);
     }

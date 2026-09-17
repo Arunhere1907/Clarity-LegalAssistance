@@ -1,11 +1,14 @@
-import { jsPDF } from 'jspdf';
 import { DocumentAnalysis, Clause } from '../types';
 
 /**
  * Generates and triggers a download of a clean, styled PDF report
  * detailing contract risks, assessments, and suggested changes.
+ * Uses dynamic import to load jsPDF only when needed.
  */
-export function downloadDocumentRiskReportPDF(docAnalysis: DocumentAnalysis): void {
+export async function downloadDocumentRiskReportPDF(docAnalysis: DocumentAnalysis): Promise<void> {
+  // Dynamically import jsPDF only when export is triggered
+  const { jsPDF } = await import('jspdf');
+  
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'pt',

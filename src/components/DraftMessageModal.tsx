@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Mail, Copy, Check, Sparkles, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Clause, DraftMessageResult } from '../types';
 import { validateDraftMessageResult } from '../utils/validateAiResponse';
+import { clauseCache } from '../utils/clauseCache';
 
 interface DraftMessageModalProps {
   clause: Clause | null;
@@ -66,6 +67,13 @@ Best regards,`;
   };
 
   const fetchDraft = async (c: Clause) => {
+    // Check cache first
+    const cachedDraft = clauseCache.get<DraftMessageResult>(c.id, 'draft');
+    if (cachedDraft) {
+      setDraft(cachedDraft);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const res = await fetch('/api/draft-message', {
@@ -84,9 +92,15 @@ Best regards,`;
 
       if (!res.ok) throw new Error('API error');
       const data: unknown = await res.json();
-      setDraft(validateDraftMessageResult(data, `Re: ${c.number} (${c.title})`));
+      const validatedDraft = validateDraftMessageResult(data, `Re: ${c.number} (${c.title})`);
+      
+      // Cache the result
+      clauseCache.set(c.id, 'draft', validatedDraft);
+      setDraft(validatedDraft);
     } catch {
-      setDraft(generateBaseDraft(c));
+      const fallbackDraft = generateBaseDraft(c);
+      setDraft(fallbackDraft);
+      // Don't cache fallback results
     } finally {
       setIsLoading(false);
     }

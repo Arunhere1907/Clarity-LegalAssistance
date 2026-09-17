@@ -1,10 +1,14 @@
 import app from "./api/index.ts";
 import path from "path";
 import express from "express";
+import compression from "compression";
 import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  // Enable gzip/brotli compression for all responses
+  app.use(compression());
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Calendar, Download, Clock, DollarSign, RefreshCw, AlertTriangle, Check } from 'lucide-react';
 import { TimelineObligation } from '../types';
 import { generateICS, downloadICSFile } from '../utils/icsExport';
@@ -8,11 +8,15 @@ interface TimelinePanelProps {
   docTitle: string;
 }
 
-export const TimelinePanel: React.FC<TimelinePanelProps> = ({ timeline, docTitle }) => {
+export const TimelinePanel: React.FC<TimelinePanelProps> = React.memo(({ timeline, docTitle }) => {
   const [filter, setFilter] = useState<'all' | TimelineObligation['category']>('all');
   const [exported, setExported] = useState(false);
 
-  const filtered = filter === 'all' ? timeline : timeline.filter((t) => t.category === filter);
+  // Memoize filtered timeline to avoid refiltering on every render
+  const filtered = useMemo(() => 
+    filter === 'all' ? timeline : timeline.filter((t) => t.category === filter),
+    [timeline, filter]
+  );
 
   const handleExportICS = () => {
     const icsString = generateICS(docTitle, timeline);
@@ -163,4 +167,4 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ timeline, docTitle
       </div>
     </div>
   );
-};
+});

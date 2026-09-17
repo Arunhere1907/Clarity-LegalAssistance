@@ -34,11 +34,11 @@ export const PrintableLawyerPacket: React.FC<PrintableLawyerPacketProps> = ({
     window.print();
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     setIsGeneratingPdf(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
-        downloadDocumentRiskReportPDF(documentAnalysis);
+        await downloadDocumentRiskReportPDF(documentAnalysis);
       } catch (err) {
         console.error('Failed to generate PDF:', err);
       } finally {
