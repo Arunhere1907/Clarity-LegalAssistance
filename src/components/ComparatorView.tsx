@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { GitCompare, ArrowRight, Check, AlertCircle, RefreshCw, X } from 'lucide-react';
-import { ComparisonResult, DiffChange } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { GitCompare, RefreshCw, X, AlertCircle } from 'lucide-react';
+import { ComparisonResult } from '../types';
 import { SAMPLE_COMPARISON_RESULT } from '../data/sampleContracts';
 
 interface ComparatorViewProps {
@@ -11,7 +11,7 @@ interface ComparatorViewProps {
 export const ComparatorView: React.FC<ComparatorViewProps> = ({ isOpen, onClose }) => {
   const [comparison, setComparison] = useState<ComparisonResult>(SAMPLE_COMPARISON_RESULT);
   const [filterParty, setFilterParty] = useState<string>('all');
-  
+
   // Custom comparison inputs
   const [isCustomMode, setIsCustomMode] = useState(false);
   const [docAText, setDocAText] = useState('');
@@ -19,34 +19,54 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({ isOpen, onClose 
   const [docAName, setDocAName] = useState('Document A (Original)');
   const [docBName, setDocBName] = useState('Document B (Redline)');
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // Focus management
+  useEffect(() => {
+    if (isOpen) {
+      headingRef.current?.focus();
+      setErrorMessage('');
+    }
+  }, [isOpen]);
+
+  // Escape key closes modal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, isLoading, onClose]);
 
   if (!isOpen) return null;
 
   const handleRunCustomCompare = async () => {
     if (!docAText.trim() || !docBText.trim()) return;
     setIsLoading(true);
+    setErrorMessage('');
 
     try {
       const res = await fetch('/api/compare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          docAText,
-          docBText,
-          docAName,
-          docBName,
-        }),
+        body: JSON.stringify({ docAText, docBText, docAName, docBName }),
       });
 
       if (!res.ok) {
-        throw new Error('Comparison API request failed.');
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error || 'The comparison service returned an error. Please try again.');
       }
 
-      const data = await res.json();
+      const data = await res.json() as ComparisonResult;
       setComparison(data);
       setIsCustomMode(false);
-    } catch (err: any) {
-      alert('Could not compare documents: ' + (err.message || 'API error'));
+    } catch (err: unknown) {
+      const message = err instanceof Error
+        ? err.message
+        : 'Could not compare documents. Please check that both documents contain readable text.';
+      setErrorMessage(message);
     } finally {
       setIsLoading(false);
     }
@@ -89,20 +109,30 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({ isOpen, onClose 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-2 sm:p-4 backdrop-blur-xs font-ui">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-2 sm:p-4 backdrop-blur-xs font-ui"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="comparator-modal-title"
+    >
       <div className="bg-white rounded border border-[#14161B] w-full max-w-4xl max-h-[95dvh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Top Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-3.5 border-b border-[#E5E7EB] bg-[#F4F4F2] shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <GitCompare className="w-4 h-4 text-[#14161B] shrink-0" />
-            <h2 className="text-xs sm:text-sm font-semibold text-[#14161B] truncate">
+            <h2
+              id="comparator-modal-title"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-xs sm:text-sm font-semibold text-[#14161B] truncate focus:outline-none"
+            >
               Structured Document Comparator &amp; Favorability Diff
             </h2>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
-              onClick={() => setIsCustomMode(!isCustomMode)}
+              onClick={() => { setIsCustomMode(!isCustomMode); setErrorMessage(''); }}
               className="text-xs text-[#14161B] underline hover:text-black font-medium cursor-pointer"
             >
               {isCustomMode ? 'Sample Comparison' : 'Compare Custom Docs'}
@@ -110,7 +140,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({ isOpen, onClose 
             <button
               onClick={onClose}
               className="p-1 text-[#5A5E68] hover:text-[#14161B] rounded hover:bg-[#E5E7EB] cursor-pointer"
-              title="Close comparator"
+              aria-label="Close comparator"
             >
               <X className="w-4 h-4" />
             </button>
@@ -125,6 +155,12 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({ isOpen, onClose 
           {isCustomMode ? (
             /* Custom Comparison Input Mode */
             <div className="space-y-4">
+              {errorMessage && (
+                <div role="alert" className="bg-red-50 border border-red-200 rounded p-2.5 text-xs text-red-900 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
+                  <div><strong className="font-semibold">Comparison failed: </strong>{errorMessage}</div>
+                </div>
+              )}
               <div className="text-xs text-[#5A5E68]">
                 Paste two contract versions (e.g. original offer vs counter-offer) to detect substantive changes and who each shift favors:
               </div>

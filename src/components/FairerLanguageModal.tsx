@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { X, GitCompare, Copy, Check, RefreshCw, Sparkles, Split, FileText } from 'lucide-react';
-import { Clause } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, GitCompare, Copy, Check, RefreshCw, Sparkles, Split, FileText, AlertTriangle } from 'lucide-react';
+import { Clause, FairerLanguageResult } from '../types';
 import { computeWordDiff, DiffToken } from '../utils/diffHelper';
+import { validateFairerLanguageResult } from '../utils/validateAiResponse';
 
 interface FairerLanguageModalProps {
   clause: Clause | null;
@@ -10,25 +11,20 @@ interface FairerLanguageModalProps {
   docType?: string;
 }
 
-interface FairerResult {
-  replacementText: string;
-  rationale: string;
-  keyChanges: string[];
-}
-
 export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
   clause,
   isOpen,
   onClose,
   docType = 'contract'
 }) => {
-  const [result, setResult] = useState<FairerResult | null>(null);
+  const [result, setResult] = useState<FairerLanguageResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'redline' | 'side-by-side'>('redline');
   const [copied, setCopied] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Generate deterministic base replacement from clause's existing suggested-replacement-text or rules
-  const generateBaseReplacement = (c: Clause): FairerResult => {
+  const generateBaseReplacement = (c: Clause): FairerLanguageResult => {
     const replacement = c.suggestedReplacementText || c.simplifiedText;
     return {
       replacementText: replacement,
@@ -60,8 +56,8 @@ export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
       });
 
       if (!res.ok) throw new Error('API error');
-      const data = await res.json();
-      setResult(data);
+      const data: unknown = await res.json();
+      setResult(validateFairerLanguageResult(data, c.originalText));
     } catch {
       setResult(generateBaseReplacement(c));
     } finally {
@@ -75,6 +71,21 @@ export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
       fetchFairerLanguage(clause);
     }
   }, [clause, isOpen]);
+
+  // Focus management
+  useEffect(() => {
+    if (isOpen) headingRef.current?.focus();
+  }, [isOpen]);
+
+  // Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, isLoading, onClose]);
 
   if (!isOpen || !clause) return null;
 
@@ -90,20 +101,30 @@ export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
     : [];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-ui">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-ui"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="fairer-language-modal-title"
+    >
       <div className="bg-white border border-[#14161B] w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#E5E7EB] bg-[#F4F4F2]">
           <div className="flex items-center gap-2">
             <GitCompare className="w-4 h-4 text-[#14161B]" />
-            <h2 className="text-sm font-semibold text-[#14161B]">
+            <h2
+              id="fairer-language-modal-title"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-sm font-semibold text-[#14161B] focus:outline-none"
+            >
               Suggested Fairer Language — Redline Comparison
             </h2>
           </div>
           <button
             onClick={onClose}
             className="p-1 text-[#5A5E68] hover:text-[#14161B] hover:bg-[#E5E7EB]"
-            title="Close"
+            aria-label="Close fairer language modal"
           >
             <X className="w-4 h-4" />
           </button>
@@ -273,40 +294,49 @@ export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="px-5 py-3 border-t border-[#E5E7EB] bg-[#F4F4F2] flex items-center justify-between text-xs">
-          <button
-            onClick={() => fetchFairerLanguage(clause)}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 text-[#5A5E68] hover:text-[#14161B] disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Regenerate</span>
-          </button>
+        <div className="px-5 py-3 border-t border-[#E5E7EB] bg-[#F4F4F2] space-y-2">
+          {/* AI-generated draft disclaimer */}
+          <div className="flex items-center gap-1.5 text-[10px] text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded">
+            <AlertTriangle className="w-3 h-3 shrink-0" />
+            <span>
+              <strong>AI-generated draft — not legal advice.</strong> Review with a qualified legal professional before using in any agreement.
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <button
+              onClick={() => clause && fetchFairerLanguage(clause)}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 text-[#5A5E68] hover:text-[#14161B] disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Regenerate</span>
+            </button>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleCopy}
-              disabled={!result}
-              className="px-3.5 py-1.5 bg-[#14161B] text-white rounded-none hover:bg-black transition-colors flex items-center gap-1.5 text-xs font-medium"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Copied Replacement</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Replacement Clause</span>
-                </>
-              )}
-            </button>
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 bg-white border border-[#D1D5DB] text-xs text-[#14161B] hover:bg-[#E5E7EB]"
-            >
-              Done
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCopy}
+                disabled={!result}
+                className="px-3.5 py-1.5 bg-[#14161B] text-white rounded-none hover:bg-black transition-colors flex items-center gap-1.5 text-xs font-medium"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Copied Replacement</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Replacement Clause</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 bg-white border border-[#D1D5DB] text-xs text-[#14161B] hover:bg-[#E5E7EB]"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       </div>

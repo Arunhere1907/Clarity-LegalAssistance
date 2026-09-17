@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Check, Printer, AlertCircle, HelpCircle, CheckSquare, FileSpreadsheet, ArrowUpRight, FileDown, Loader2 } from 'lucide-react';
+import { Copy, Check, Printer, HelpCircle, CheckSquare, ArrowUpRight, FileDown, Loader2 } from 'lucide-react';
 import { DocumentAnalysis } from '../types';
 import { downloadDocumentRiskReportPDF } from '../utils/pdfGenerator';
 

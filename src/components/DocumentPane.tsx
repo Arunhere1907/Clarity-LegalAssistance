@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HelpCircle, Sliders, PlayCircle, Eye, Columns, BookOpen, AlertTriangle, AlertCircle, CheckCircle2, ToggleLeft, ToggleRight, Info, Mail, GitCompare, Search, X, Contrast } from 'lucide-react';
+import { HelpCircle, PlayCircle, Eye, Columns, BookOpen, AlertTriangle, AlertCircle, CheckCircle2, Info, Mail, GitCompare, Search, X, Contrast } from 'lucide-react';
 import { Clause, RiskTag, ReadingMode } from '../types';
 
 interface DocumentPaneProps {

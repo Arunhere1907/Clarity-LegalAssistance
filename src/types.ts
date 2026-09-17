@@ -1,6 +1,18 @@
+// ---------------------------------------------------------------------------
+// Core domain types for Clarity Legal Document Workspace
+// ---------------------------------------------------------------------------
+
 export type RiskTag = 'standard' | 'unusual' | 'high-attention' | 'missing-but-expected';
 
 export type ReadingMode = 'standard' | 'high-contrast';
+
+export type TimelineCategory = 'deadline' | 'payment' | 'renewal' | 'penalty';
+
+export type DocType = 'lease' | 'employment' | 'nda' | 'loan' | 'tos' | 'vendor' | 'custom';
+
+// ---------------------------------------------------------------------------
+// Document structure
+// ---------------------------------------------------------------------------
 
 export interface JargonTerm {
   term: string;
@@ -29,8 +41,9 @@ export interface TimelineObligation {
   title: string;
   description: string;
   party: string;
-  category: 'deadline' | 'payment' | 'renewal' | 'penalty';
-  isoDate?: string; // for .ics generation
+  /** Exact literal values; server sanitises arbitrary AI output to this union. */
+  category: TimelineCategory;
+  isoDate?: string;
 }
 
 export interface PreSigningQuestion {
@@ -60,7 +73,7 @@ export interface LawyerBrief {
 export interface DocumentAnalysis {
   id: string;
   title: string;
-  docType: 'lease' | 'employment' | 'nda' | 'loan' | 'tos' | 'vendor' | 'custom';
+  docType: DocType;
   detectedType: string;
   summary: string;
   clauses: Clause[];
@@ -68,6 +81,10 @@ export interface DocumentAnalysis {
   questionsChecklist: PreSigningQuestion[];
   lawyerBrief: LawyerBrief;
 }
+
+// ---------------------------------------------------------------------------
+// Q&A
+// ---------------------------------------------------------------------------
 
 export interface Citation {
   clauseId: string;
@@ -85,13 +102,18 @@ export interface QAMessage {
   timestamp: string;
 }
 
+// ---------------------------------------------------------------------------
+// Document comparison
+// ---------------------------------------------------------------------------
+
 export interface DiffChange {
   id: string;
   clauseTitle: string;
   section: string;
   oldText: string;
   newText: string;
-  favorsParty: string; // e.g. "Tenant", "Landlord", "Employee", "Neutral"
+  /** e.g. "Tenant", "Landlord", "Employee", "Neutral" */
+  favorsParty: string;
   favorsBadgeColor?: 'tenant' | 'landlord' | 'neutral';
   explanation: string;
 }
@@ -103,9 +125,46 @@ export interface ComparisonResult {
   changes: DiffChange[];
 }
 
+// ---------------------------------------------------------------------------
+// PII redaction
+// ---------------------------------------------------------------------------
+
+export type PiiType = 'NAME' | 'ACCOUNT' | 'SIGNATURE' | 'ADDRESS' | 'PHONE' | 'EMAIL' | 'IDENTIFIER' | 'MONEY';
+
 export interface RedactionItem {
   id: string;
   original: string;
   placeholder: string;
-  type: 'NAME' | 'ACCOUNT' | 'SIGNATURE' | 'ADDRESS' | 'PHONE' | 'EMAIL' | 'IDENTIFIER' | 'MONEY';
+  type: PiiType;
+}
+
+// ---------------------------------------------------------------------------
+// Simulator
+// ---------------------------------------------------------------------------
+
+export interface SimulationResult {
+  trigger: string;
+  userRecourse: string;
+  rights: string;
+  counterpartyRemedies: string;
+  financialOrOperationalImpact: string;
+  preventionOrNextStep: string;
+  walkthrough: string;
+}
+
+// ---------------------------------------------------------------------------
+// Fairer language / draft message
+// ---------------------------------------------------------------------------
+
+export interface FairerLanguageResult {
+  replacementText: string;
+  rationale: string;
+  keyChanges: string[];
+}
+
+export interface DraftMessageResult {
+  recipient: string;
+  subject: string;
+  body: string;
+  talkingPoints: string[];
 }

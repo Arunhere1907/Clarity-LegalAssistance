@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Printer, ArrowLeft, FileDown, Loader2 } from 'lucide-react';
 import { DocumentAnalysis } from '../types';
 import { downloadDocumentRiskReportPDF } from '../utils/pdfGenerator';
@@ -16,9 +16,19 @@ export const PrintableLawyerPacket: React.FC<PrintableLawyerPacketProps> = ({
 }) => {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
+  // Escape key to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isGeneratingPdf) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, isGeneratingPdf, onClose]);
+
   if (!isOpen) return null;
 
-  const { title, detectedType, summary, lawyerBrief, questionsChecklist, clauses } = documentAnalysis;
+  const { title, detectedType, summary, lawyerBrief, questionsChecklist } = documentAnalysis;
 
   const handlePrint = () => {
     window.print();
@@ -81,7 +91,7 @@ export const PrintableLawyerPacket: React.FC<PrintableLawyerPacketProps> = ({
           <button
             onClick={onClose}
             className="p-1.5 text-[#5A5E68] hover:text-[#14161B] rounded hover:bg-[#E5E7EB] cursor-pointer"
-            title="Close"
+            aria-label="Close lawyer packet"
           >
             <X className="w-4 h-4" />
           </button>

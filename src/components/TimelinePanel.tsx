@@ -48,7 +48,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ timeline, docTitle
             id="btn-export-ics"
             onClick={handleExportICS}
             className="flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-[#14161B] text-white hover:bg-black transition-colors"
-            title="Download iCalendar file (.ics) for Google Calendar, Outlook, or Apple Calendar"
+            aria-label={`Export obligations to calendar (.ics file)`}
           >
             {exported ? <Check className="w-3 h-3 text-emerald-300" /> : <Download className="w-3 h-3" />}
             <span>{exported ? 'Exported (.ics)' : 'Export to Calendar'}</span>
@@ -137,7 +137,27 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ timeline, docTitle
           ))}
 
           {filtered.length === 0 && (
-            <div className="text-xs text-[#5A5E68] italic py-6">No obligations in this category.</div>
+            <div className="flex flex-col items-center justify-center py-10 text-center px-4">
+              <Calendar className="w-8 h-8 text-[#D1D5DB] mb-3" />
+              <p className="text-xs font-semibold text-[#14161B] mb-1">
+                {filter === 'all'
+                  ? 'No obligations found'
+                  : `No ${filter} obligations in this document`}
+              </p>
+              <p className="text-[11px] text-[#5A5E68] max-w-xs leading-relaxed">
+                {filter === 'all'
+                  ? 'This document does not contain date-bound obligations or deadlines that Clarity could extract.'
+                  : 'Try switching to "All" to see every obligation type.'}
+              </p>
+              {filter !== 'all' && (
+                <button
+                  onClick={() => setFilter('all')}
+                  className="mt-3 text-xs text-[#14161B] underline hover:no-underline"
+                >
+                  Show all obligations
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>

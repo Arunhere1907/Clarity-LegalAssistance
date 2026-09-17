@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X, Shield, Lock, CheckCircle2 } from 'lucide-react';
 import { RedactionItem } from '../types';
 
@@ -9,21 +9,47 @@ interface PIIAuditModalProps {
 }
 
 export const PIIAuditModal: React.FC<PIIAuditModalProps> = ({ isOpen, onClose, items }) => {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (isOpen) headingRef.current?.focus();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-ui">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-ui"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pii-audit-modal-title"
+    >
       <div className="bg-white rounded border border-[#14161B] w-full max-w-xl max-h-[85vh] flex flex-col shadow-xl">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#E5E7EB] bg-[#F4F4F2]">
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-emerald-700" />
-            <h3 className="text-sm font-semibold text-[#14161B]">
+            <h3
+              id="pii-audit-modal-title"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-sm font-semibold text-[#14161B] focus:outline-none"
+            >
               Client-Side PII Redaction Audit Log
             </h3>
           </div>
           <button
             onClick={onClose}
             className="p-1 text-[#5A5E68] hover:text-[#14161B] rounded hover:bg-[#E5E7EB]"
+            aria-label="Close PII audit log"
           >
             <X className="w-4 h-4" />
           </button>
@@ -39,6 +65,7 @@ export const PIIAuditModal: React.FC<PIIAuditModalProps> = ({ isOpen, onClose, i
               The sensitive personal identifiers listed below are detected and replaced with synthetic cryptographic placeholders
               inside your browser <strong>prior to sending any document data</strong> to external AI servers.
               They are safely restored only on your local screen.
+              <strong className="block mt-1"> Automated detection may not catch every identifier — review sensitive documents carefully before uploading.</strong>
             </p>
           </div>
 
@@ -98,8 +125,7 @@ export const PIIAuditModal: React.FC<PIIAuditModalProps> = ({ isOpen, onClose, i
             className="px-3 py-1 bg-white border border-[#D1D5DB] rounded text-xs text-[#14161B] hover:bg-[#E5E7EB]"
           >
             Close Audit
-          </button>
-        </div>
+          </button>        </div>
       </div>
     </div>
   );

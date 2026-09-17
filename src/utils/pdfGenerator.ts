@@ -173,7 +173,7 @@ export function downloadDocumentRiskReportPDF(docAnalysis: DocumentAnalysis): vo
     (c) => c.tag === 'high-attention' || c.tag === 'unusual' || c.suggestedReplacementText || c.suggestedNegotiationStrategy
   );
 
-  const renderClauseCard = (clause: Clause, index: number) => {
+  const renderClauseCard = (clause: Clause) => {
     const isHighAtt = clause.tag === 'high-attention';
     const isUnusual = clause.tag === 'unusual';
 
@@ -275,8 +275,8 @@ export function downloadDocumentRiskReportPDF(docAnalysis: DocumentAnalysis): vo
     y = startY + totalEstimated + 12;
   };
 
-  flaggedOrActionable.forEach((clause, idx) => {
-    renderClauseCard(clause, idx);
+  flaggedOrActionable.forEach((clause) => {
+    renderClauseCard(clause);
   });
 
   // --- SECTION 3: CUSTOMARY PROVISIONS OMITTED ---

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Send, ArrowUpRight, AlertCircle, Sparkles } from 'lucide-react';
-import { Clause, QAMessage, Citation } from '../types';
+import { Clause, QAMessage } from '../types';
+import { validateQAResponse } from '../utils/validateAiResponse';
 
 interface QAPanelProps {
   clauses: Clause[];
@@ -30,9 +31,17 @@ export const QAPanel: React.FC<QAPanelProps> = ({
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const liveRegionRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const handleSend = async (questionText: string) => {
     const query = questionText.trim();
+    // Prevent duplicate submissions while loading (Task 15)
     if (!query || isLoading) return;
 
     const userMsg: QAMessage = {
@@ -45,6 +54,11 @@ export const QAPanel: React.FC<QAPanelProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
     setIsLoading(true);
+
+    // Update screen-reader live region
+    if (liveRegionRef.current) {
+      liveRegionRef.current.textContent = 'Retrieving grounded clause spans…';
+    }
 
     try {
       const res = await fetch('/api/qa', {
@@ -62,23 +76,28 @@ export const QAPanel: React.FC<QAPanelProps> = ({
         }),
       });
 
-      if (!res.ok) {
-        throw new Error('Failed to query document.');
-      }
+      if (!res.ok) throw new Error('Failed to query document.');
 
-      const data = await res.json();
+      const data: unknown = await res.json();
+      const validated = validateQAResponse(data);
 
       const assistantMsg: QAMessage = {
         id: `assistant-${Date.now()}`,
         sender: 'assistant',
-        text: data.answer,
-        citations: data.citations || [],
-        foundInDocument: data.foundInDocument ?? true,
+        text: validated.answer,
+        citations: validated.citations,
+        foundInDocument: validated.foundInDocument,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err: any) {
+
+      if (liveRegionRef.current) {
+        liveRegionRef.current.textContent = validated.foundInDocument
+          ? 'Answer found. See response below.'
+          : 'The document does not contain information regarding this question.';
+      }
+    } catch {
       // Fallback local grounded matching if server API offline or rate-limited
       const matched = clauses.find(
         (c) =>
@@ -86,10 +105,8 @@ export const QAPanel: React.FC<QAPanelProps> = ({
           c.originalText.toLowerCase().includes(query.toLowerCase())
       );
 
-      if (matched) {
-        setMessages((prev) => [
-          ...prev,
-          {
+      const fallbackMsg: QAMessage = matched
+        ? {
             id: `assistant-${Date.now()}`,
             sender: 'assistant',
             text: `Per ${matched.number} (${matched.title}): ${matched.simplifiedText}`,
@@ -98,24 +115,26 @@ export const QAPanel: React.FC<QAPanelProps> = ({
                 clauseId: matched.id,
                 clauseNumber: matched.number,
                 clauseTitle: matched.title,
-                quote: matched.originalText.slice(0, 120) + '...',
+                quote: matched.originalText.slice(0, 120) + '…',
               },
             ],
             foundInDocument: true,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
+          }
+        : {
             id: `assistant-${Date.now()}`,
             sender: 'assistant',
             text: 'The document does not contain explicit terms addressing this question. To protect your interests, seek clarification in writing from the drafting party or consult a licensed attorney.',
             foundInDocument: false,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          },
-        ]);
+          };
+
+      setMessages((prev) => [...prev, fallbackMsg]);
+
+      if (liveRegionRef.current) {
+        liveRegionRef.current.textContent = matched
+          ? 'Answer found in document.'
+          : 'The document does not contain information regarding this question.';
       }
     } finally {
       setIsLoading(false);
@@ -124,6 +143,15 @@ export const QAPanel: React.FC<QAPanelProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-[#F4F4F2] font-ui">
+      {/* Screen-reader live region for loading/result status (Task 12) */}
+      <div
+        ref={liveRegionRef}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      />
+
       {/* Grounding Trust Notice */}
       <div className="bg-white border-b border-[#E5E7EB] px-4 py-2 text-[11px] text-[#5A5E68] flex items-center justify-between">
         <div className="flex items-center gap-1.5">
@@ -189,11 +217,16 @@ export const QAPanel: React.FC<QAPanelProps> = ({
         ))}
 
         {isLoading && (
-          <div className="flex items-center gap-2 text-xs text-[#5A5E68] bg-white p-2.5 rounded border border-[#E5E7EB] w-fit">
-            <span className="w-2 h-2 rounded-full bg-[#14161B] animate-pulse"></span>
-            <span>Retrieving grounded clause spans...</span>
+          <div
+            className="flex items-center gap-2 text-xs text-[#5A5E68] bg-white p-2.5 rounded border border-[#E5E7EB] w-fit"
+            aria-busy="true"
+          >
+            <span className="w-2 h-2 rounded-full bg-[#14161B] animate-pulse" aria-hidden="true" />
+            <span>Retrieving grounded clause spans…</span>
           </div>
         )}
+        {/* Scroll anchor */}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Suggested Quick Questions */}
@@ -224,13 +257,17 @@ export const QAPanel: React.FC<QAPanelProps> = ({
           }}
           className="flex items-center gap-2"
         >
+          <label htmlFor="input-qa-question" className="sr-only">
+            Ask a question about this document
+          </label>
           <input
             id="input-qa-question"
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Ask a question about rights, dates, or penalties..."
+            placeholder="Ask a question about rights, dates, or penalties…"
             disabled={isLoading}
+            aria-disabled={isLoading}
             className="flex-1 bg-[#F4F4F2] border border-[#D1D5DB] rounded px-3 py-2 text-xs text-[#14161B] placeholder-[#5A5E68] focus:outline-none focus:border-[#14161B]"
           />
           <button
@@ -238,7 +275,7 @@ export const QAPanel: React.FC<QAPanelProps> = ({
             type="submit"
             disabled={!inputValue.trim() || isLoading}
             className="p-2 bg-[#14161B] text-white rounded hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            title="Submit question"
+            aria-label="Submit question"
           >
             <Send className="w-4 h-4" />
           </button>

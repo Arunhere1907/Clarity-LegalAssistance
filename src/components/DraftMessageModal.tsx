@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { X, Mail, Copy, Check, Sparkles, RefreshCw, Send } from 'lucide-react';
-import { Clause } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Mail, Copy, Check, Sparkles, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Clause, DraftMessageResult } from '../types';
+import { validateDraftMessageResult } from '../utils/validateAiResponse';
 
 interface DraftMessageModalProps {
   clause: Clause | null;
@@ -10,13 +11,6 @@ interface DraftMessageModalProps {
   docType?: string;
 }
 
-interface DraftResult {
-  recipient: string;
-  subject: string;
-  body: string;
-  talkingPoints: string[];
-}
-
 export const DraftMessageModal: React.FC<DraftMessageModalProps> = ({
   clause,
   isOpen,
@@ -24,12 +18,13 @@ export const DraftMessageModal: React.FC<DraftMessageModalProps> = ({
   docTitle = 'Agreement',
   docType = 'contract'
 }) => {
-  const [draft, setDraft] = useState<DraftResult | null>(null);
+  const [draft, setDraft] = useState<DraftMessageResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Generate deterministic base draft from clause's existing suggested-negotiation-strategy text
-  const generateBaseDraft = (c: Clause): DraftResult => {
+  const generateBaseDraft = (c: Clause): DraftMessageResult => {
     const isLease = docType === 'lease' || c.originalText.toLowerCase().includes('tenant') || c.originalText.toLowerCase().includes('rent');
     const isEmp = docType === 'employment' || c.originalText.toLowerCase().includes('employee') || c.originalText.toLowerCase().includes('salary');
     
@@ -88,8 +83,8 @@ Best regards,`;
       });
 
       if (!res.ok) throw new Error('API error');
-      const data = await res.json();
-      setDraft(data);
+      const data: unknown = await res.json();
+      setDraft(validateDraftMessageResult(data, `Re: ${c.number} (${c.title})`));
     } catch {
       setDraft(generateBaseDraft(c));
     } finally {
@@ -104,6 +99,21 @@ Best regards,`;
     }
   }, [clause, isOpen]);
 
+  // Focus management
+  useEffect(() => {
+    if (isOpen) headingRef.current?.focus();
+  }, [isOpen]);
+
+  // Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, isLoading, onClose]);
+
   if (!isOpen || !clause) return null;
 
   const handleCopy = () => {
@@ -115,20 +125,30 @@ Best regards,`;
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-ui">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-ui"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="draft-message-modal-title"
+    >
       <div className="bg-white border border-[#14161B] w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#E5E7EB] bg-[#F4F4F2]">
           <div className="flex items-center gap-2">
             <Mail className="w-4 h-4 text-[#14161B]" />
-            <h2 className="text-sm font-semibold text-[#14161B]">
+            <h2
+              id="draft-message-modal-title"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-sm font-semibold text-[#14161B] focus:outline-none"
+            >
               Draft Counterparty Message
             </h2>
           </div>
           <button
             onClick={onClose}
             className="p-1 text-[#5A5E68] hover:text-[#14161B] hover:bg-[#E5E7EB]"
-            title="Close"
+            aria-label="Close draft message modal"
           >
             <X className="w-4 h-4" />
           </button>
@@ -223,40 +243,49 @@ Best regards,`;
         </div>
 
         {/* Footer Actions */}
-        <div className="px-5 py-3 border-t border-[#E5E7EB] bg-[#F4F4F2] flex items-center justify-between text-xs">
-          <button
-            onClick={() => fetchDraft(clause)}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 text-[#5A5E68] hover:text-[#14161B] disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Regenerate</span>
-          </button>
+        <div className="px-5 py-3 border-t border-[#E5E7EB] bg-[#F4F4F2] space-y-2">
+          {/* AI-generated draft disclaimer */}
+          <div className="flex items-center gap-1.5 text-[10px] text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded">
+            <AlertTriangle className="w-3 h-3 shrink-0" />
+            <span>
+              <strong>AI-generated draft — not legal advice.</strong> Review and edit before sending. Consult a qualified legal professional if needed.
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <button
+              onClick={() => clause && fetchDraft(clause)}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 text-[#5A5E68] hover:text-[#14161B] disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Regenerate</span>
+            </button>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleCopy}
-              disabled={!draft}
-              className="px-3.5 py-1.5 bg-[#14161B] text-white rounded-none hover:bg-black transition-colors flex items-center gap-1.5 text-xs font-medium"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Copied to Clipboard</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Message</span>
-                </>
-              )}
-            </button>
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 bg-white border border-[#D1D5DB] text-xs text-[#14161B] hover:bg-[#E5E7EB]"
-            >
-              Done
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCopy}
+                disabled={!draft}
+                className="px-3.5 py-1.5 bg-[#14161B] text-white rounded-none hover:bg-black transition-colors flex items-center gap-1.5 text-xs font-medium"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Copied to Clipboard</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Message</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 bg-white border border-[#D1D5DB] text-xs text-[#14161B] hover:bg-[#E5E7EB]"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       </div>

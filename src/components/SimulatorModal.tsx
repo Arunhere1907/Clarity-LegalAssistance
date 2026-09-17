@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { X, PlayCircle, Clock, Shield, Gavel, Scale, AlertTriangle, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { Clause } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, PlayCircle, Clock, Shield, Gavel } from 'lucide-react';
+import { Clause, SimulationResult } from '../types';
+import { validateSimulationResult } from '../utils/validateAiResponse';
 
 interface SimulatorModalProps {
   clause: Clause | null;
@@ -8,16 +9,6 @@ interface SimulatorModalProps {
   onClose: () => void;
   allClauses?: Clause[];
   onSelectClause?: (clause: Clause) => void;
-}
-
-interface SimulationResult {
-  trigger: string;
-  userRecourse: string;
-  rights: string;
-  counterpartyRemedies: string;
-  financialOrOperationalImpact: string;
-  preventionOrNextStep: string;
-  walkthrough: string;
 }
 
 export const SimulatorModal: React.FC<SimulatorModalProps> = ({
@@ -30,6 +21,7 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
   const [scenarioInput, setScenarioInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<SimulationResult | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Generate an intelligent baseline simulation based on clause content
   const generateDefaultResult = (c: Clause): SimulationResult => {
@@ -86,6 +78,20 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
     }
   }, [clause]);
 
+  // Focus management & Escape key
+  useEffect(() => {
+    if (isOpen) headingRef.current?.focus();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, isLoading, onClose]);
+
   if (!isOpen || !clause) return null;
 
   const handleSimulate = async (customScenario?: string) => {
@@ -103,14 +109,11 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
         }),
       });
 
-      if (!res.ok) {
-        throw new Error('Simulation API request failed.');
-      }
+      if (!res.ok) throw new Error('Simulation API request failed.');
 
-      const data = await res.json();
-      setResult(data);
+      const data: unknown = await res.json();
+      setResult(validateSimulationResult(data));
     } catch {
-      // Retain or regenerate high-quality local simulation fallback
       setResult(generateDefaultResult(clause));
     } finally {
       setIsLoading(false);
@@ -140,20 +143,30 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
       : 'text-[#1B4332]';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-ui">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-ui"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="simulator-modal-title"
+    >
       <div className="bg-white border border-[#14161B] w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#E5E7EB] bg-[#F4F4F2]">
           <div className="flex items-center gap-2">
             <PlayCircle className="w-4 h-4 text-[#14161B]" />
-            <h2 className="text-sm font-semibold text-[#14161B]">
+            <h2
+              id="simulator-modal-title"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-sm font-semibold text-[#14161B] focus:outline-none"
+            >
               "What Happens If" Consequence Simulator
             </h2>
           </div>
           <button
             onClick={onClose}
             className="p-1 text-[#5A5E68] hover:text-[#14161B] hover:bg-[#E5E7EB]"
-            title="Close simulator"
+            aria-label="Close simulator"
           >
             <X className="w-4 h-4" />
           </button>

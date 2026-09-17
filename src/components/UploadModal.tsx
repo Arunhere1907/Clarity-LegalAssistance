@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Upload, FileText, Sparkles, Shield, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Upload, Sparkles, Shield, Lock, AlertCircle } from 'lucide-react';
 import { DocumentAnalysis, RedactionItem } from '../types';
 import { detectAndRedactPII, restoreDocumentAnalysisPII } from '../utils/piiRedaction';
 
@@ -19,6 +19,26 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // Move focus to modal heading when opened
+  useEffect(() => {
+    if (isOpen) {
+      headingRef.current?.focus();
+      setErrorMessage('');
+    }
+  }, [isOpen]);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, isLoading, onClose]);
 
   if (!isOpen) return null;
 
@@ -48,6 +68,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const handleProcessDocument = async () => {
     if (!pastedText.trim() || isLoading) return;
     setIsLoading(true);
+    setErrorMessage('');
     setStatusMessage('Step 1/3: Sanitizing personal identifiers (Names, Account #s, Signatures, Addresses)...');
 
     try {
@@ -60,28 +81,42 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: redactedText,
-        }),
+        body: JSON.stringify({ text: redactedText }),
       });
 
       if (!res.ok) {
-        throw new Error('Analysis service error.');
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error || 'Analysis service returned an error. Please try again.');
       }
 
-      const data = await res.json();
+      const data = await res.json() as {
+        title?: string;
+        docType?: string;
+        detectedType?: string;
+        summary?: string;
+        clauses?: unknown[];
+        timeline?: unknown[];
+        questionsChecklist?: unknown[];
+        lawyerBrief?: unknown;
+      };
       setStatusMessage('Step 3/3: Restoring sanitized identifiers in rendered output...');
 
       const analyzedDoc: DocumentAnalysis = {
         id: `custom-doc-${Date.now()}`,
         title: docTitle || data.title || 'Uploaded Document',
-        docType: data.docType || 'custom',
+        docType: (data.docType as DocumentAnalysis['docType']) || 'custom',
         detectedType: data.detectedType || 'Legal Agreement',
-        summary: data.summary,
-        clauses: data.clauses,
-        timeline: data.timeline || [],
-        questionsChecklist: data.questionsChecklist || [],
-        lawyerBrief: data.lawyerBrief,
+        summary: data.summary || '',
+        clauses: (data.clauses as DocumentAnalysis['clauses']) || [],
+        timeline: (data.timeline as DocumentAnalysis['timeline']) || [],
+        questionsChecklist: (data.questionsChecklist as DocumentAnalysis['questionsChecklist']) || [],
+        lawyerBrief: (data.lawyerBrief as DocumentAnalysis['lawyerBrief']) || {
+          summary: '',
+          flaggedClauses: [],
+          openQuestions: [],
+          missingProvisions: [],
+          disclaimer: '',
+        },
       };
 
       // Step 3: Restore original sensitive data in the rendered UI output
@@ -89,8 +124,11 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
       onDocumentAnalyzed(restoredDoc, items);
       onClose();
-    } catch (err: any) {
-      alert('Could not complete automated analysis: ' + (err.message || 'Please check text'));
+    } catch (err: unknown) {
+      const message = err instanceof Error
+        ? err.message
+        : 'We could not complete the analysis. Please check that the document contains readable text and try again.';
+      setErrorMessage(message);
     } finally {
       setIsLoading(false);
       setStatusMessage('');
@@ -98,19 +136,30 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-2 sm:p-4 backdrop-blur-xs font-ui">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-2 sm:p-4 backdrop-blur-xs font-ui"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="upload-modal-title"
+    >
       <div className="bg-white rounded border border-[#14161B] w-full max-w-2xl max-h-[95dvh] sm:max-h-[90vh] flex flex-col shadow-xl overflow-hidden">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-3.5 sm:px-5 py-2.5 sm:py-3 border-b border-[#E5E7EB] bg-[#F4F4F2] shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <Upload className="w-4 h-4 text-[#14161B] shrink-0" />
-            <h3 className="text-xs sm:text-sm font-semibold text-[#14161B] truncate">
+            <h3
+              id="upload-modal-title"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-xs sm:text-sm font-semibold text-[#14161B] truncate focus:outline-none"
+            >
               Ingest Document (PDF, TXT, DOCX, or Paste)
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-[#5A5E68] hover:text-[#14161B] rounded hover:bg-[#E5E7EB] shrink-0 cursor-pointer"
+            disabled={isLoading}
+            className="p-1.5 text-[#5A5E68] hover:text-[#14161B] rounded hover:bg-[#E5E7EB] shrink-0 cursor-pointer disabled:opacity-50"
             aria-label="Close upload dialog"
           >
             <X className="w-4 h-4" />
@@ -173,6 +222,20 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             />
           </div>
 
+          {/* Error Banner */}
+          {errorMessage && (
+            <div
+              role="alert"
+              className="bg-red-50 border border-red-200 rounded p-2.5 text-xs text-red-900 flex items-start gap-2"
+            >
+              <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-semibold">Analysis failed: </strong>
+                {errorMessage}
+              </div>
+            </div>
+          )}
+
           {/* Client-Side PII Masking Live Status */}
           {currentPII.items.length > 0 && (
             <div className="bg-emerald-50 border border-emerald-200 rounded p-2.5 text-xs text-emerald-950 flex items-start gap-2 overflow-hidden">
@@ -216,7 +279,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         <div className="px-3.5 sm:px-5 py-2.5 sm:py-3 border-t border-[#E5E7EB] bg-[#F4F4F2] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
           <div className="flex items-center gap-1.5 text-[11px] text-[#5A5E68] min-w-0">
             <Lock className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-            <span className="truncate">Zero-exposure client redaction enabled</span>
+            <span className="truncate">Automated PII detection may not catch every identifier — review before uploading sensitive documents.</span>
           </div>
           <div className="flex items-center justify-end gap-2 shrink-0">
             <button
