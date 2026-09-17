@@ -1,0 +1,6 @@
+{
+  "name": "Clarity — AI for Legal Assistance & Access",
+  "description": "Document workspace that simplifies contracts, flags risks, grounds Q&A in clause citations, simulates legal consequences, diffs versions, and exports obligations timelines and lawyer-prep briefs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
