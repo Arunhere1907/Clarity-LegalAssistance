@@ -10,7 +10,7 @@ interface QAPanelProps {
   suggestedQuestions?: string[];
 }
 
-export const QAPanel: React.FC<QAPanelProps> = React.memo(({
+export const QAPanel: React.FC<QAPanelProps> = ({
   clauses,
   docTitle,
   onSelectCitation,
@@ -283,4 +283,4 @@ export const QAPanel: React.FC<QAPanelProps> = React.memo(({
       </div>
     </div>
   );
-});
+};

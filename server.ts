@@ -7,8 +7,11 @@ import { createServer as createViteServer } from "vite";
 async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-  // Enable gzip/brotli compression for all responses
-  app.use(compression());
+  // Enable gzip/brotli compression for responses above 1KB threshold
+  app.use(compression({
+    threshold: 1024, // Only compress responses larger than 1KB
+    level: 6, // Balanced compression level (0-9)
+  }));
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

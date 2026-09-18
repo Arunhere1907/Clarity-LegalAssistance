@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, ArrowUpRight, PlayCircle, Mail, GitCompare, FileDown, Loader2 } from 'lucide-react';
 import { Clause, RiskTag, DocumentAnalysis } from '../types';
 import { downloadDocumentRiskReportPDF } from '../utils/pdfGenerator';
@@ -12,7 +12,7 @@ interface RiskTagsPanelProps {
   onSuggestFairerLanguage?: (clause: Clause) => void;
 }
 
-export const RiskTagsPanel: React.FC<RiskTagsPanelProps> = React.memo(({
+export const RiskTagsPanel: React.FC<RiskTagsPanelProps> = ({
   clauses,
   documentAnalysis,
   onSelectClause,
@@ -37,22 +37,17 @@ export const RiskTagsPanel: React.FC<RiskTagsPanelProps> = React.memo(({
     }, 40);
   };
 
-  // Memoize counts calculation to avoid recomputing on every render
-  const counts = useMemo(() => ({
+  const counts = {
     all: clauses.length,
     'high-attention': clauses.filter((c) => c.tag === 'high-attention').length,
     unusual: clauses.filter((c) => c.tag === 'unusual').length,
     standard: clauses.filter((c) => c.tag === 'standard').length,
     'missing-but-expected': clauses.filter((c) => c.tag === 'missing-but-expected').length,
-  }), [clauses]);
+  };
 
-  // Memoize filtered clauses to avoid recomputing on every render
-  const filteredClauses = useMemo(() => 
-    activeFilter === 'all'
-      ? clauses
-      : clauses.filter((c) => c.tag === activeFilter),
-    [clauses, activeFilter]
-  );
+  const filteredClauses = activeFilter === 'all'
+    ? clauses
+    : clauses.filter((c) => c.tag === activeFilter);
 
   const getTagBadge = (tag: RiskTag) => {
     switch (tag) {
@@ -271,4 +266,4 @@ export const RiskTagsPanel: React.FC<RiskTagsPanelProps> = React.memo(({
       </div>
     </div>
   );
-});
+};

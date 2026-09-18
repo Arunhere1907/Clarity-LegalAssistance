@@ -22,6 +22,7 @@ export const DraftMessageModal: React.FC<DraftMessageModalProps> = ({
   const [draft, setDraft] = useState<DraftMessageResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [inFlightKey, setInFlightKey] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Generate deterministic base draft from clause's existing suggested-negotiation-strategy text
@@ -74,6 +75,13 @@ Best regards,`;
       return;
     }
 
+    // Prevent duplicate in-flight requests for same clause + mode
+    const requestKey = `${c.id}:draft`;
+    if (inFlightKey === requestKey) {
+      return; // Request already in progress, ignore duplicate
+    }
+
+    setInFlightKey(requestKey);
     setIsLoading(true);
     try {
       const res = await fetch('/api/draft-message', {
@@ -103,6 +111,7 @@ Best regards,`;
       // Don't cache fallback results
     } finally {
       setIsLoading(false);
+      setInFlightKey(null);
     }
   };
 

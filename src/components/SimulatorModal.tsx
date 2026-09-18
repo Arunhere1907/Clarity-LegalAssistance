@@ -22,6 +22,7 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
   const [scenarioInput, setScenarioInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<SimulationResult | null>(null);
+  const [inFlightKey, setInFlightKey] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Generate an intelligent baseline simulation based on clause content
@@ -105,6 +106,13 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
       return;
     }
 
+    // Prevent duplicate in-flight requests for same clause + mode + scenario
+    const requestKey = `${clause.id}:simulate:${scenario}`;
+    if (inFlightKey === requestKey) {
+      return; // Request already in progress, ignore duplicate
+    }
+
+    setInFlightKey(requestKey);
     setIsLoading(true);
 
     try {
@@ -132,6 +140,7 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
       // Don't cache fallback results
     } finally {
       setIsLoading(false);
+      setInFlightKey(null);
     }
   };
 

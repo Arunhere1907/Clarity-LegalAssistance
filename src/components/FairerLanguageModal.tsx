@@ -22,6 +22,7 @@ export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'redline' | 'side-by-side'>('redline');
   const [copied, setCopied] = useState(false);
+  const [inFlightKey, setInFlightKey] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Generate deterministic base replacement from clause's existing suggested-replacement-text or rules
@@ -48,6 +49,13 @@ export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
       return;
     }
 
+    // Prevent duplicate in-flight requests for same clause + mode
+    const requestKey = `${c.id}:fairer`;
+    if (inFlightKey === requestKey) {
+      return; // Request already in progress, ignore duplicate
+    }
+
+    setInFlightKey(requestKey);
     setIsLoading(true);
     try {
       const res = await fetch('/api/suggest-fairer-language', {
@@ -76,6 +84,7 @@ export const FairerLanguageModal: React.FC<FairerLanguageModalProps> = ({
       // Don't cache fallback results
     } finally {
       setIsLoading(false);
+      setInFlightKey(null);
     }
   };
 
