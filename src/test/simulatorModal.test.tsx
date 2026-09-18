@@ -294,7 +294,7 @@ describe('Simulator Modal Tests', () => {
 
     it('shows loading state during simulation', async () => {
       // Mock fetch to delay response
-      global.fetch = vi.fn(() =>
+      global.fetch = vi.fn((() =>
         new Promise(resolve => setTimeout(() => resolve({
           ok: true,
           json: async () => ({
@@ -307,7 +307,7 @@ describe('Simulator Modal Tests', () => {
             walkthrough: 'Test walkthrough',
           }),
         } as Response), 100))
-      );
+      ) as typeof fetch);
 
       render(
         <SimulatorModal
